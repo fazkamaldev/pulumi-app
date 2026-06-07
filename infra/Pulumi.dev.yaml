@@ -1,0 +1,3 @@
+config:
+  pulumi-app:dbPassword:
+    secure: AAABAKiVO0vfv9+XHlh8yZlxfjVht8bXyLeyn7mlASSw/lP0hYRBbtJrRebRZG0mikpDZQ==

@@ -25,6 +25,7 @@ frontend/dist/
 
 # Pulumi
 .pulumi/
+infra/bin/
 
 # IDE & OS
 .idea/
