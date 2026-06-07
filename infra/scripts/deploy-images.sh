@@ -12,12 +12,45 @@ if ! command -v pulumi >/dev/null; then
 fi
 
 cd "$INFRA_DIR"
-BACKEND_ECR=$(pulumi stack output backendEcrUrl)
+SETTINGS_ECR=$(pulumi stack output settingsEcrUrl)
+BRAND_ECR=$(pulumi stack output brandEcrUrl)
+CAR_ECR=$(pulumi stack output carEcrUrl)
 FRONTEND_ECR=$(pulumi stack output frontendEcrUrl)
 APP_URL=$(pulumi stack output appUrl)
+CLUSTER=$(pulumi stack output clusterName)
 
-# ... ECR login unchanged ...
+ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 
-docker build --platform linux/amd64 -t pulumi-app-backend "$REPO_ROOT/backend"
-# ...
-docker build --build-arg VITE_API_URL= -t pulumi-app-frontend "$REPO_ROOT/frontend"
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "$REGISTRY"
+
+docker build --platform linux/amd64 -t pulumi-app-settings "$REPO_ROOT/backend-settings"
+docker tag pulumi-app-settings:latest "${SETTINGS_ECR}:latest"
+docker push "${SETTINGS_ECR}:latest"
+
+docker build --platform linux/amd64 -t pulumi-app-brand "$REPO_ROOT/backend-brand"
+docker tag pulumi-app-brand:latest "${BRAND_ECR}:latest"
+docker push "${BRAND_ECR}:latest"
+
+docker build --platform linux/amd64 -t pulumi-app-car "$REPO_ROOT/backend-car"
+docker tag pulumi-app-car:latest "${CAR_ECR}:latest"
+docker push "${CAR_ECR}:latest"
+
+docker build --platform linux/amd64 \
+  --build-arg INIT_SETTINGS_API_URL= \
+  --build-arg INIT_BRAND_API_URL= \
+  --build-arg INIT_CAR_API_URL= \
+  -t pulumi-app-frontend "$REPO_ROOT/frontend"
+docker tag pulumi-app-frontend:latest "${FRONTEND_ECR}:latest"
+docker push "${FRONTEND_ECR}:latest"
+
+for SERVICE in settings brand car frontend; do
+  aws ecs update-service \
+    --cluster "$CLUSTER" \
+    --service "pulumi-app-${SERVICE}" \
+    --force-new-deployment \
+    --region "$REGION"
+done
+
+echo "Deployed. App URL: $APP_URL"

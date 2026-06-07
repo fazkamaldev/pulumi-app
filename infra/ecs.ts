@@ -2,6 +2,118 @@ import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 
 const project = pulumi.getProject();
+const awsRegion = aws.config.region ?? "ap-southeast-2";
+
+type BackendServiceArgs = {
+  name: string;
+  image: pulumi.Input<string>;
+  databaseUrl: pulumi.Input<string>;
+  vpcId: pulumi.Input<string>;
+  privateSubnetIds: pulumi.Input<string>[];
+  ecsSgId: pulumi.Input<string>;
+  clusterArn: pulumi.Input<string>;
+  listenerArn: pulumi.Input<string>;
+  listenerPriority: number;
+  pathPatterns: string[];
+  executionRoleArn: pulumi.Input<string>;
+  taskRoleArn: pulumi.Input<string>;
+  dependsOn: pulumi.Resource[];
+};
+
+function createBackendMicroservice(args: BackendServiceArgs) {
+  const logGroup = new aws.cloudwatch.LogGroup(`${args.name}-logs`, {
+    name: `/ecs/${project}/${args.name}`,
+    retentionInDays: 7,
+  });
+
+  const targetGroup = new aws.lb.TargetGroup(`${args.name}-tg`, {
+    name: `${project}-${args.name}-tg`,
+    port: 8000,
+    protocol: "HTTP",
+    targetType: "ip",
+    vpcId: args.vpcId,
+    healthCheck: {
+      path: "/health",
+      matcher: "200",
+    },
+    tags: { Name: `${project}-${args.name}-tg` },
+  });
+
+  const listenerRule = new aws.lb.ListenerRule(`${args.name}-rule`, {
+    listenerArn: args.listenerArn,
+    priority: args.listenerPriority,
+    actions: [
+      {
+        type: "forward",
+        targetGroupArn: targetGroup.arn,
+      },
+    ],
+    conditions: [
+      {
+        pathPattern: {
+          values: args.pathPatterns,
+        },
+      },
+    ],
+  });
+
+  const taskDefinition = new aws.ecs.TaskDefinition(`${args.name}-task`, {
+    family: `${project}-${args.name}`,
+    cpu: "256",
+    memory: "512",
+    networkMode: "awsvpc",
+    requiresCompatibilities: ["FARGATE"],
+    executionRoleArn: args.executionRoleArn,
+    taskRoleArn: args.taskRoleArn,
+    containerDefinitions: pulumi
+      .all([args.image, args.databaseUrl, logGroup.name])
+      .apply(([image, databaseUrl, logGroupName]) =>
+        JSON.stringify([
+          {
+            name: args.name,
+            image,
+            essential: true,
+            portMappings: [{ containerPort: 8000, protocol: "tcp" }],
+            environment: [{ name: "DATABASE_URL", value: databaseUrl }],
+            logConfiguration: {
+              logDriver: "awslogs",
+              options: {
+                "awslogs-group": logGroupName,
+                "awslogs-region": awsRegion,
+                "awslogs-stream-prefix": args.name,
+              },
+            },
+          },
+        ]),
+      ),
+  });
+
+  const service = new aws.ecs.Service(
+    `${args.name}-service`,
+    {
+      name: `${project}-${args.name}`,
+      cluster: args.clusterArn,
+      taskDefinition: taskDefinition.arn,
+      desiredCount: 1,
+      launchType: "FARGATE",
+      networkConfiguration: {
+        subnets: args.privateSubnetIds,
+        securityGroups: [args.ecsSgId],
+        assignPublicIp: false,
+      },
+      loadBalancers: [
+        {
+          targetGroupArn: targetGroup.arn,
+          containerName: args.name,
+          containerPort: 8000,
+        },
+      ],
+    },
+    { dependsOn: [...args.dependsOn, listenerRule] },
+  );
+
+  return { service, listenerRule };
+}
 
 export function createSecurityGroups(vpcId: pulumi.Input<string>) {
   const albSg = new aws.ec2.SecurityGroup("alb-sg", {
@@ -67,7 +179,9 @@ export function createEcs(args: {
   privateSubnetIds: pulumi.Input<string>[];
   albSgId: pulumi.Input<string>;
   ecsSgId: pulumi.Input<string>;
-  backendImage: pulumi.Input<string>;
+  settingsImage: pulumi.Input<string>;
+  brandImage: pulumi.Input<string>;
+  carImage: pulumi.Input<string>;
   frontendImage: pulumi.Input<string>;
   databaseUrl: pulumi.Input<string>;
 }) {
@@ -93,11 +207,6 @@ export function createEcs(args: {
     }),
   });
 
-  const backendLogGroup = new aws.cloudwatch.LogGroup("backend-logs", {
-    name: `/ecs/${project}/backend`,
-    retentionInDays: 7,
-  });
-
   const frontendLogGroup = new aws.cloudwatch.LogGroup("frontend-logs", {
     name: `/ecs/${project}/frontend`,
     retentionInDays: 7,
@@ -108,19 +217,6 @@ export function createEcs(args: {
     securityGroups: [args.albSgId],
     subnets: args.publicSubnetIds,
     tags: { Name: `${project}-alb` },
-  });
-
-  const backendTg = new aws.lb.TargetGroup("backend-tg", {
-    name: `${project}-backend-tg`,
-    port: 8000,
-    protocol: "HTTP",
-    targetType: "ip",
-    vpcId: args.vpcId,
-    healthCheck: {
-      path: "/health",
-      matcher: "200",
-    },
-    tags: { Name: `${project}-backend-tg` },
   });
 
   const frontendTg = new aws.lb.TargetGroup("frontend-tg", {
@@ -147,61 +243,47 @@ export function createEcs(args: {
     ],
   });
 
-  const apiPaths = [
-    "/health",
-    "/items*",
-    "/docs*",
-    "/openapi.json",
-    "/redoc",
-  ];
-
-  const apiRule = new aws.lb.ListenerRule("api-rule", {
+  const sharedBackendArgs = {
+    vpcId: args.vpcId,
+    privateSubnetIds: args.privateSubnetIds,
+    ecsSgId: args.ecsSgId,
+    clusterArn: cluster.arn,
     listenerArn: listener.arn,
-    priority: 10,
-    actions: [
-      {
-        type: "forward",
-        targetGroupArn: backendTg.arn,
-      },
-    ],
-    conditions: [
-      {
-        pathPattern: {
-          values: apiPaths,
-        },
-      },
-    ],
-  });
-
-  const backendTaskDef = new aws.ecs.TaskDefinition("backend-task", {
-    family: `${project}-backend`,
-    cpu: "256",
-    memory: "512",
-    networkMode: "awsvpc",
-    requiresCompatibilities: ["FARGATE"],
     executionRoleArn: executionRole.arn,
     taskRoleArn: taskRole.arn,
-    containerDefinitions: pulumi
-    .all([args.backendImage, args.databaseUrl, backendLogGroup.name])
-    .apply(([image, databaseUrl, logGroupName]) =>
-      JSON.stringify([
-        {
-          name: "backend",
-          image,
-          essential: true,
-          portMappings: [{ containerPort: 8000, protocol: "tcp" }],
-          environment: [{ name: "DATABASE_URL", value: databaseUrl }],
-          logConfiguration: {
-            logDriver: "awslogs",
-            options: {
-              "awslogs-group": logGroupName,
-              "awslogs-region": aws.config.region ?? "ap-southeast-2",
-              "awslogs-stream-prefix": "backend",
-            },
-          },
-        },
-      ]),
-    ),
+    databaseUrl: args.databaseUrl,
+    dependsOn: [listener],
+  };
+
+  const brand = createBackendMicroservice({
+    ...sharedBackendArgs,
+    name: "brand",
+    image: args.brandImage,
+    listenerPriority: 10,
+    pathPatterns: ["/brands", "/brands/*"],
+  });
+
+  const car = createBackendMicroservice({
+    ...sharedBackendArgs,
+    name: "car",
+    image: args.carImage,
+    listenerPriority: 20,
+    pathPatterns: ["/cars", "/cars/*"],
+  });
+
+  const settings = createBackendMicroservice({
+    ...sharedBackendArgs,
+    name: "settings",
+    image: args.settingsImage,
+    listenerPriority: 30,
+    pathPatterns: [
+      "/settings",
+      "/settings/*",
+      "/docs",
+      "/docs/*",
+      "/openapi.json",
+      "/redoc",
+    ],
   });
 
   const frontendTaskDef = new aws.ecs.TaskDefinition("frontend-task", {
@@ -213,50 +295,26 @@ export function createEcs(args: {
     executionRoleArn: executionRole.arn,
     taskRoleArn: taskRole.arn,
     containerDefinitions: pulumi
-    .all([args.frontendImage, frontendLogGroup.name])
-    .apply(([image, logGroupName]) =>
-      JSON.stringify([
-        {
-          name: "frontend",
-          image,
-          essential: true,
-          portMappings: [{ containerPort: 80, protocol: "tcp" }],
-          logConfiguration: {
-            logDriver: "awslogs",
-            options: {
-              "awslogs-group": logGroupName,
-              "awslogs-region": aws.config.region ?? "ap-southeast-2",
-              "awslogs-stream-prefix": "frontend",
+      .all([args.frontendImage, frontendLogGroup.name])
+      .apply(([image, logGroupName]) =>
+        JSON.stringify([
+          {
+            name: "frontend",
+            image,
+            essential: true,
+            portMappings: [{ containerPort: 80, protocol: "tcp" }],
+            logConfiguration: {
+              logDriver: "awslogs",
+              options: {
+                "awslogs-group": logGroupName,
+                "awslogs-region": awsRegion,
+                "awslogs-stream-prefix": "frontend",
+              },
             },
           },
-        },
-      ]),
-    ),
+        ]),
+      ),
   });
-
-  const backendService = new aws.ecs.Service(
-    "backend-service",
-    {
-      name: `${project}-backend`,
-      cluster: cluster.arn,
-      taskDefinition: backendTaskDef.arn,
-      desiredCount: 1,
-      launchType: "FARGATE",
-      networkConfiguration: {
-        subnets: args.privateSubnetIds,
-        securityGroups: [args.ecsSgId],
-        assignPublicIp: false,
-      },
-      loadBalancers: [
-        {
-          targetGroupArn: backendTg.arn,
-          containerName: "backend",
-          containerPort: 8000,
-        },
-      ],
-    },
-    { dependsOn: [listener, apiRule] },
-  );
 
   const frontendService = new aws.ecs.Service(
     "frontend-service",
@@ -286,7 +344,9 @@ export function createEcs(args: {
     cluster,
     alb,
     albUrl: alb.dnsName,
-    backendService,
+    settingsService: settings.service,
+    brandService: brand.service,
+    carService: car.service,
     frontendService,
   };
 }

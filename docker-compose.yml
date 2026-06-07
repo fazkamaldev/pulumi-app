@@ -14,8 +14,8 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
-    build: ./backend
+  backend-settings:
+    build: ./backend-settings
     environment:
       DATABASE_URL: mysql+pymysql://app:app@db:3306/appdb
     ports:
@@ -24,12 +24,38 @@ services:
       db:
         condition: service_healthy
 
+  backend-brand:
+    build: ./backend-brand
+    environment:
+      DATABASE_URL: mysql+pymysql://app:app@db:3306/appdb
+    ports:
+      - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend-car:
+    build: ./backend-car
+    environment:
+      DATABASE_URL: mysql+pymysql://app:app@db:3306/appdb
+    ports:
+      - "8002:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      backend-brand:
+        condition: service_started
+
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:8000
+        INIT_SETTINGS_API_URL: http://localhost:8000
+        INIT_BRAND_API_URL: http://localhost:8001
+        INIT_CAR_API_URL: http://localhost:8002
     ports:
       - "5173:80"
     depends_on:
-      - backend
+      - backend-settings
+      - backend-brand
+      - backend-car

@@ -1,8 +1,20 @@
 import * as aws from "@pulumi/aws";
 
 export function createEcrRepos() {
-  const backendRepo = new aws.ecr.Repository("backend-repo", {
-    name: "pulumi-app-backend",
+  const settingsRepo = new aws.ecr.Repository("settings-repo", {
+    name: "pulumi-app-settings",
+    forceDelete: true,
+    imageScanningConfiguration: { scanOnPush: true },
+  });
+
+  const brandRepo = new aws.ecr.Repository("brand-repo", {
+    name: "pulumi-app-brand",
+    forceDelete: true,
+    imageScanningConfiguration: { scanOnPush: true },
+  });
+
+  const carRepo = new aws.ecr.Repository("car-repo", {
+    name: "pulumi-app-car",
     forceDelete: true,
     imageScanningConfiguration: { scanOnPush: true },
   });
@@ -13,5 +25,5 @@ export function createEcrRepos() {
     imageScanningConfiguration: { scanOnPush: true },
   });
 
-  return { backendRepo, frontendRepo };
+  return { settingsRepo, brandRepo, carRepo, frontendRepo };
 }

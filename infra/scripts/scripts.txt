@@ -9,7 +9,9 @@ export AWS_PROFILE=Faz
 export AWS_REGION=ap-southeast-2
 
 cd /Users/Personal/codes/python/pulumi-app/infra
-BACKEND_ECR=$(pulumi stack output backendEcrUrl)
+SETTINGS_ECR=$(pulumi stack output settingsEcrUrl)
+BRAND_ECR=$(pulumi stack output brandEcrUrl)
+CAR_ECR=$(pulumi stack output carEcrUrl)
 FRONTEND_ECR=$(pulumi stack output frontendEcrUrl)
 CLUSTER=$(pulumi stack output clusterName)
 APP_URL=$(pulumi stack output appUrl)
@@ -28,20 +30,34 @@ aws ecr get-login-password --region ap-southeast-2 \
   | docker login --username AWS --password-stdin 953289342213.dkr.ecr.ap-southeast-2.amazonaws.com
 
 # Backend — note --platform linux/amd64
-docker build --platform linux/amd64 -t pulumi-app-backend ./backend
-docker tag pulumi-app-backend:latest ${BACKEND_ECR}:latest
-docker push ${BACKEND_ECR}:latest
+docker build --platform linux/amd64 -t pulumi-app-settings ./backend-settings
+docker tag pulumi-app-settings:latest ${SETTINGS_ECR}:latest
+docker push ${SETTINGS_ECR}:latest
+
+docker build --platform linux/amd64 -t pulumi-app-brand ./backend-brand
+docker tag pulumi-app-brand:latest ${BRAND_ECR}:latest
+docker push ${BRAND_ECR}:latest
+
+docker build --platform linux/amd64 -t pulumi-app-car ./backend-car
+docker tag pulumi-app-car:latest ${CAR_ECR}:latest
+docker push ${CAR_ECR}:latest
 
 # Frontend — note --platform linux/amd64
-docker build --platform linux/amd64 --build-arg VITE_API_URL= -t pulumi-app-frontend ./frontend
+docker build --platform linux/amd64 \
+  --build-arg INIT_SETTINGS_API_URL= \
+  --build-arg INIT_BRAND_API_URL= \
+  --build-arg INIT_CAR_API_URL= \
+  -t pulumi-app-frontend ./frontend
 docker tag pulumi-app-frontend:latest ${FRONTEND_ECR}:latest
 docker push ${FRONTEND_ECR}:latest
 
 # Redeploy
 aws ecs update-service --cluster $CLUSTER --service pulumi-app-frontend --force-new-deployment --region ap-southeast-2
-aws ecs update-service --cluster $CLUSTER --service pulumi-app-backend --force-new-deployment --region ap-southeast-2
+aws ecs update-service --cluster $CLUSTER --service pulumi-app-settings --force-new-deployment --region ap-southeast-2
+aws ecs update-service --cluster $CLUSTER --service pulumi-app-brand --force-new-deployment --region ap-southeast-2
+aws ecs update-service --cluster $CLUSTER --service pulumi-app-car --force-new-deployment --region ap-southeast-2
 
-aws ecs wait services-stable --cluster $CLUSTER --services pulumi-app-frontend pulumi-app-backend --region ap-southeast-2
+aws ecs wait services-stable --cluster $CLUSTER --services pulumi-app-frontend pulumi-app-settings pulumi-app-brand pulumi-app-car --region ap-southeast-2
 
 
 # SSH

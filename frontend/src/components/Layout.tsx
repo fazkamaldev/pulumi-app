@@ -18,8 +18,11 @@ export default function Layout() {
             <NavLink className="nav-link" to="/">
               Home
             </NavLink>
-            <NavLink className="nav-link" to="/items">
-              Items
+            <NavLink className="nav-link" to="/settings">
+              Settings
+            </NavLink>
+            <NavLink className="nav-link" to="/cars">
+              Cars
             </NavLink>
           </div>
         </div>

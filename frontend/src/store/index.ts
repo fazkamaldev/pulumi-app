@@ -1,9 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit";
-import itemsReducer from "../features/items/itemsSlice";
+import brandsReducer from "../features/brands/brandsSlice";
+import carsReducer from "../features/cars/carsSlice";
+import settingsReducer from "../features/settings/settingsSlice";
 
 export const store = configureStore({
   reducer: {
-    items: itemsReducer,
+    settings: settingsReducer,
+    brands: brandsReducer,
+    cars: carsReducer,
   },
 });
 

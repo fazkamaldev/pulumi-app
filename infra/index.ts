@@ -7,7 +7,7 @@ import { createNetwork } from "./network";
 const config = new pulumi.Config();
 const dbPassword = config.requireSecret("dbPassword");
 
-const { backendRepo, frontendRepo } = createEcrRepos();
+const { settingsRepo, brandRepo, carRepo, frontendRepo } = createEcrRepos();
 const net = createNetwork();
 const { albSg, ecsSg } = createSecurityGroups(net.vpc.id);
 
@@ -25,12 +25,16 @@ const ecs = createEcs({
   privateSubnetIds: [net.privateSubnetA.id, net.privateSubnetB.id],
   albSgId: albSg.id,
   ecsSgId: ecsSg.id,
-  backendImage: backendRepo.repositoryUrl.apply((url) => `${url}:latest`),
+  settingsImage: settingsRepo.repositoryUrl.apply((url) => `${url}:latest`),
+  brandImage: brandRepo.repositoryUrl.apply((url) => `${url}:latest`),
+  carImage: carRepo.repositoryUrl.apply((url) => `${url}:latest`),
   frontendImage: frontendRepo.repositoryUrl.apply((url) => `${url}:latest`),
   databaseUrl,
 });
 
-export const backendEcrUrl = backendRepo.repositoryUrl;
+export const settingsEcrUrl = settingsRepo.repositoryUrl;
+export const brandEcrUrl = brandRepo.repositoryUrl;
+export const carEcrUrl = carRepo.repositoryUrl;
 export const frontendEcrUrl = frontendRepo.repositoryUrl;
 export const appUrl = pulumi.interpolate`http://${ecs.albUrl}`;
 export const dbEndpoint = db.address;

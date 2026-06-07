@@ -1,18 +1,18 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
-  clearError,
-  createItem,
-  fetchItems,
-} from "../features/items/itemsSlice";
+  clearSettingsError,
+  createSetting,
+  fetchSettings,
+} from "../features/settings/settingsSlice";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 
-export default function ItemsPage() {
+export default function SettingsPage() {
   const dispatch = useAppDispatch();
-  const { items, loading, error } = useAppSelector((state) => state.items);
+  const { settings, loading, error } = useAppSelector((state) => state.settings);
   const [name, setName] = useState("");
 
   useEffect(() => {
-    void dispatch(fetchItems());
+    void dispatch(fetchSettings());
   }, [dispatch]);
 
   async function handleSubmit(e: FormEvent) {
@@ -20,9 +20,9 @@ export default function ItemsPage() {
     const trimmed = name.trim();
     if (!trimmed) return;
 
-    dispatch(clearError());
-    const result = await dispatch(createItem(trimmed));
-    if (createItem.fulfilled.match(result)) {
+    dispatch(clearSettingsError());
+    const result = await dispatch(createSetting(trimmed));
+    if (createSetting.fulfilled.match(result)) {
       setName("");
     }
   }
@@ -30,17 +30,17 @@ export default function ItemsPage() {
   return (
     <div className="row justify-content-center">
       <div className="col-md-8 col-lg-6">
-        <h1 className="mb-4">Items</h1>
+        <h1 className="mb-4">Settings</h1>
         <form className="input-group mb-4" onSubmit={handleSubmit}>
           <input
             type="text"
             className="form-control"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Item name"
+            placeholder="Setting name"
           />
           <button className="btn btn-primary" type="submit">
-            Add item
+            Add setting
           </button>
         </form>
         {error && (
@@ -49,12 +49,12 @@ export default function ItemsPage() {
           </div>
         )}
         {loading ? (
-          <div className="text-center text-muted">Loading items...</div>
+          <div className="text-center text-muted">Loading settings...</div>
         ) : (
           <ul className="list-group">
-            {items.map((item) => (
-              <li className="list-group-item" key={item.id}>
-                {item.name}
+            {settings.map((setting) => (
+              <li className="list-group-item" key={setting.id}>
+                {setting.name}
               </li>
             ))}
           </ul>
