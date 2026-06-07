@@ -18,6 +18,6 @@ APP_URL=$(pulumi stack output appUrl)
 
 # ... ECR login unchanged ...
 
-docker build -t pulumi-app-backend "$REPO_ROOT/backend"
+docker build --platform linux/amd64 -t pulumi-app-backend "$REPO_ROOT/backend"
 # ...
 docker build --build-arg VITE_API_URL= -t pulumi-app-frontend "$REPO_ROOT/frontend"
